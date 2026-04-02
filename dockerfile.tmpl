@@ -1,8 +1,8 @@
 # Railpack version {{.Version}}
 # ============================================================
 # Stage 1: installer
-#   - curl でバイナリを取得する一時ステージ
-#   - このステージのツール類は最終イメージに含まれない
+#   - railpack バイナリと、railpack が実行時に必要とする
+#     mise バイナリを取得する一時ステージ
 # ============================================================
 FROM debian:stable-slim AS installer
 
@@ -11,35 +11,83 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       curl \
       ca-certificates \
+      jq \
  && rm -rf /var/lib/apt/lists/*
 
+# --- railpack バイナリの取得 ---
 RUN mkdir -p /tmp/bin/railpack-dir \
  && curl -fsSL --proto '=https' --tlsv1.2 \
       https://railpack.com/install.sh \
     | RAILPACK_VERSION={{.Version}} sh -s -- --bin-dir /tmp/bin/railpack-dir \
  && chmod 0755 /tmp/bin/railpack-dir/railpack
 
-# スタティックバイナリであることを確認（動的リンクなら ldd は依存を表示する）
+# スタティックバイナリであることを確認
 RUN ! ldd /tmp/bin/railpack-dir/railpack 2>&1 | grep -q "=>" \
     || { echo "ERROR: railpack is not a static binary"; exit 1; }
 
-# ============================================================
-# Stage 2: runtime
-#   - シェルもパッケージマネージャも持たない最小イメージ
-#   - gcr.io/distroless/static-debian12:nonroot
-#     * サイズ: ~2 MiB (debian:stable-slim の ~30 MiB と比較)
-#     * 含むもの: ca-certificates / tzdata / /etc/passwd (/etc/group)
-#     * 非 root ユーザー (uid=65532) がデフォルト
-#     * シェル・パッケージマネージャなし → 攻撃対象面が極小
-# ============================================================
-FROM gcr.io/distroless/static-debian12:nonroot
+# --- railpack が実行時に要求する mise バイナリの先置き ---
+# railpack は起動時に /tmp/railpack/mise/mise-<version> を
+# ハードコードされたパスへ自分でダウンロードしようとする。
+# そのバイナリをビルド時に先置きしておくことで、
+# コンテナ起動後のランタイムダウンロードを不要にする。
+#
+# 必要な mise バージョンは railpack のリリースノートから取得する:
+#   https://github.com/railwayapp/railpack/releases/tag/v{{.Version}}
+# → "Mise: Updated mise version from ... to vYYYY.M.D" を参照
+#
+# 注意: railpack のバージョンが変わると mise バージョンも変わる。
+#       fetch_and_generate.go でバージョンを動的に取得して
+#       MISE_VERSION ビルド引数として渡すことを推奨。
+ARG MISE_VERSION={{.MiseVersion}}
 
-# バイナリ・LICENSE・README をまとめてコピー（root 所有）
+RUN set -eu; \
+    ARCH="$(uname -m)"; \
+    case "${ARCH}" in \
+      x86_64)  MISE_ARCH="linux-x64" ;; \
+      aarch64) MISE_ARCH="linux-arm64" ;; \
+      *) echo "Unsupported arch: ${ARCH}"; exit 1 ;; \
+    esac; \
+    mkdir -p /tmp/railpack-mise; \
+    curl -fsSL --proto '=https' --tlsv1.2 \
+      "https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-${MISE_ARCH}" \
+      -o "/tmp/railpack-mise/mise-${MISE_VERSION}"; \
+    chmod 0755 "/tmp/railpack-mise/mise-${MISE_VERSION}"
+
+# ============================================================
+# Stage 2: runtime — mise なしの最小 debian-slim
+# ============================================================
+FROM debian:stable-slim
+
+# hadolint ignore=DL3008
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# 非 root ユーザーの作成
+RUN groupadd --gid 65532 nonroot \
+ && useradd --uid 65532 --gid nonroot \
+            --no-create-home --shell /sbin/nologin \
+            nonroot
+
+# railpack バイナリ・LICENSE・README をコピー
 COPY --from=installer --chown=root:root /tmp/bin/railpack-dir/railpack  /usr/local/bin/railpack
 COPY --from=installer --chown=root:root /tmp/bin/railpack-dir/LICENSE   /usr/local/share/railpack/LICENSE
 COPY --from=installer --chown=root:root /tmp/bin/railpack-dir/README.md /usr/local/share/railpack/README.md
 
-# distroless:nonroot は uid=65532 で起動するためここで明示
+# railpack が実行時に参照する mise バイナリを先置き
+# パス: /tmp/railpack/mise/mise-<version>  ← railpack ソースにハードコード
+ARG MISE_VERSION={{.MiseVersion}}
+COPY --from=installer --chown=root:root \
+  /tmp/railpack-mise/ /tmp/railpack/mise/
+RUN chmod 0755 "/tmp/railpack/mise/mise-${MISE_VERSION}"
+
+RUN chmod 0755 /usr/local/bin/railpack
+
+# インストール確認（--version は mise を呼ばないので常に成功する）
+RUN ["/usr/local/bin/railpack", "--version"]
+
 USER nonroot
 
 WORKDIR /workspace
