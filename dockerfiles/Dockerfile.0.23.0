@@ -1,47 +1,28 @@
 # Railpack version 0.23.0
-# ============================================================
-# Stage 1: installer
-#   - curl でバイナリを取得する一時ステージ
-#   - このステージのツール類は最終イメージに含まれない
-# ============================================================
-FROM debian:stable-slim AS installer
+FROM debian:stable-slim
 
+# パッケージのインストールと非ルートユーザーの作成
 # hadolint ignore=DL3008
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       curl \
       ca-certificates \
+ && useradd -m -s /bin/bash railuser \
  && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /tmp/bin/railpack-dir \
- && curl -fsSL --proto '=https' --tlsv1.2 \
-      https://railpack.com/install.sh \
-    | RAILPACK_VERSION=0.23.0 sh -s -- --bin-dir /tmp/bin/railpack-dir \
- && chmod 0755 /tmp/bin/railpack-dir/railpack
+# 実行ユーザーの切り替え
+USER railuser
+WORKDIR /app
 
-# スタティックバイナリであることを確認（動的リンクなら ldd は依存を表示する）
-RUN ! ldd /tmp/bin/railpack-dir/railpack 2>&1 | grep -q "=>" \
-    || { echo "ERROR: railpack is not a static binary"; exit 1; }
+# パスの設定 (railpack のインストール先を優先)
+ENV PATH="/home/railuser/.local/bin:${PATH}"
 
-# ============================================================
-# Stage 2: runtime
-#   - シェルもパッケージマネージャも持たない最小イメージ
-#   - gcr.io/distroless/static-debian12:nonroot
-#     * サイズ: ~2 MiB (debian:stable-slim の ~30 MiB と比較)
-#     * 含むもの: ca-certificates / tzdata / /etc/passwd (/etc/group)
-#     * 非 root ユーザー (uid=65532) がデフォルト
-#     * シェル・パッケージマネージャなし → 攻撃対象面が極小
-# ============================================================
-FROM gcr.io/distroless/static-debian12:nonroot
+# Railpack のインストール
+# 0.23.0 を環境変数として渡し、指定のディレクトリへインストール
+RUN mkdir -p ~/.local/bin && \
+    curl -sSL https://railpack.com/install.sh | RAILPACK_VERSION=0.23.0 sh -s -- --bin-dir ~/.local/bin
 
-# バイナリ・LICENSE・README をまとめてコピー（root 所有）
-COPY --from=installer --chown=root:root /tmp/bin/railpack-dir/railpack  /usr/local/bin/railpack
-COPY --from=installer --chown=root:root /tmp/bin/railpack-dir/LICENSE   /usr/local/share/railpack/LICENSE
-COPY --from=installer --chown=root:root /tmp/bin/railpack-dir/README.md /usr/local/share/railpack/README.md
+# 動作確認
+RUN railpack --version
 
-# distroless:nonroot は uid=65532 で起動するためここで明示
-USER nonroot
-
-WORKDIR /workspace
-
-ENTRYPOINT ["/usr/local/bin/railpack"]
+ENTRYPOINT ["railpack"]
