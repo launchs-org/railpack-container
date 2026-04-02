@@ -8,26 +8,27 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      workflows: write # ワークフローファイルを更新するために必要
 
     steps:
       - name: コードのチェックアウト
         uses: actions/checkout@v4
+        # token の指定を削除（デフォルトの GITHUB_TOKEN を使用）
 
       - name: Goのセットアップ
         uses: actions/setup-go@v5
         with:
           go-version: 'stable'
 
-      - name: リストとビルド設定の更新
+      - name: リストの更新
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: go run fetch_and_generate.go
 
-      - name: 変更をコミット
+      - name: 変更をコミットとプッシュ
+        shell: bash
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add railpack_releases.json .github/workflows/build.yml
-          git commit -m "chore: update railpack versions and build options" || echo "変更なし"
-          git push
+          # workflows は含まず、json だけを追加
+          git add railpack_releases.json
+          git diff --staged --exit-code || (git commit -m "chore: update railpack version list" && git push)

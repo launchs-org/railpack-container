@@ -4,12 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'ビルドするバージョンを選択'
+        description: 'ビルドするバージョンを入力 (例: 0.23.0)'
         required: true
-        default: 'latest'
-        type: choice
-        options:
-          - 'latest' # ここはスクリプトによって自動的に書き換えられます
+        type: string # 手入力に変更
 
 env:
   REGISTRY: ghcr.io

@@ -72,13 +72,11 @@ func main() {
 		fmt.Printf("バージョン %s の Dockerfile を生成します...\n", *singleVersion)
 		generateOne(*singleVersion, tmpl)
 	} else {
-		// 全バージョンを生成し、かつ GitHub Actions の YAML も更新する
-		fmt.Println("全バージョンの Dockerfile を生成し、Actionsの設定を更新します...")
+		// 全バージョンを生成
+		fmt.Println("全バージョンの Dockerfile を生成します...")
 		for _, v := range versions {
 			generateOne(v, tmpl)
 		}
-		// Actions YAML のバージョン選択肢を更新
-		updateActionsYaml(versions)
 	}
 
 	fmt.Println("\n処理が完了しました。")
@@ -101,39 +99,8 @@ func generateOne(version string, tmpl *template.Template) {
 	}
 }
 
-// GitHub Actions のビルド用 YAML 内の options を更新
-func updateActionsYaml(versions []string) {
-	if _, err := os.Stat(buildYmlFile); os.IsNotExist(err) {
-		fmt.Println("Actions YAMLが見つかりません。スキップします。")
-		return
-	}
+func generateOne(version string, tmpl *template.Template) {
 
-	content, err := os.ReadFile(buildYmlFile)
-	if err != nil {
-		fmt.Printf("YAML読み込み失敗: %v\n", err)
-		return
-	}
-
-	// options: 以下のリストを正規表現で探して置換
-	// YAMLのインデントを考慮しつつ書き換える
-	var optionsBuilder strings.Builder
-	optionsBuilder.WriteString("        options:\n")
-	for _, v := range versions {
-		optionsBuilder.WriteString(fmt.Sprintf("          - '%s'\n", v))
-	}
-
-	re := regexp.MustCompile(`(?s)        options:.*?(\n    \w|\z)`)
-	newContent := re.ReplaceAllString(string(content), optionsBuilder.String()+"$1")
-
-	err = os.WriteFile(buildYmlFile, []byte(newContent), 0644)
-	if err != nil {
-		fmt.Printf("YAML書き込み失敗: %v\n", err)
-	} else {
-		fmt.Println("GitHub Actions のバージョン選択肢を更新しました。")
-	}
-}
-
-func fetchAllReleases() []Release {
 	var releases []Release
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases?per_page=100", owner, repo)
 
