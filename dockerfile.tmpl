@@ -1,20 +1,26 @@
 # Railpack version {{.Version}}
 FROM debian:stable-slim
 
+# パッケージのインストールと非ルートユーザーの作成
 # hadolint ignore=DL3008
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       curl \
       ca-certificates \
+ && useradd -m -s /bin/bash railuser \
  && rm -rf /var/lib/apt/lists/*
 
-# mise のインストール
-RUN curl -fsSL --proto '=https' --tlsv1.2 https://mise.run | sh
+# 実行ユーザーの切り替え
+USER railuser
+WORKDIR /app
 
-ENV PATH="/root/.local/bin:${PATH}"
+# パスの設定 (railpack のインストール先を優先)
+ENV PATH="/home/railuser/.local/bin:${PATH}"
 
-# railpack を指定バージョンでインストールし、グローバルに有効化
-RUN mise use --global "github:railwayapp/railpack@{{.Version}}"
+# Railpack のインストール
+# {{.Version}} を環境変数として渡し、指定のディレクトリへインストール
+RUN mkdir -p ~/.local/bin && \
+    curl -sSL https://railpack.com/install.sh | RAILPACK_VERSION={{.Version}} sh -s -- --bin-dir ~/.local/bin
 
 # 動作確認
 RUN railpack --version
