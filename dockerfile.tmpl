@@ -13,13 +13,14 @@ RUN apt-get update \
       ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL --proto '=https' --tlsv1.2 \
+RUN mkdir -p /tmp/bin/railpack-dir \
+ && curl -fsSL --proto '=https' --tlsv1.2 \
       https://railpack.com/install.sh \
-    | RAILPACK_VERSION={{.Version}} sh -s -- --bin-dir /tmp/bin \
- && chmod 0755 /tmp/bin/railpack
+    | RAILPACK_VERSION={{.Version}} sh -s -- --bin-dir /tmp/bin/railpack-dir \
+ && chmod 0755 /tmp/bin/railpack-dir/railpack
 
 # スタティックバイナリであることを確認（動的リンクなら ldd は依存を表示する）
-RUN ! ldd /tmp/bin/railpack 2>&1 | grep -q "=>" \
+RUN ! ldd /tmp/bin/railpack-dir/railpack 2>&1 | grep -q "=>" \
     || { echo "ERROR: railpack is not a static binary"; exit 1; }
 
 # ============================================================
@@ -33,8 +34,10 @@ RUN ! ldd /tmp/bin/railpack 2>&1 | grep -q "=>" \
 # ============================================================
 FROM gcr.io/distroless/static-debian12:nonroot
 
-# バイナリをコピー（root 所有・755）
-COPY --from=installer --chown=root:root /tmp/bin/railpack /usr/local/bin/railpack
+# バイナリ・LICENSE・README をまとめてコピー（root 所有）
+COPY --from=installer --chown=root:root /tmp/bin/railpack-dir/railpack  /usr/local/bin/railpack
+COPY --from=installer --chown=root:root /tmp/bin/railpack-dir/LICENSE   /usr/local/share/railpack/LICENSE
+COPY --from=installer --chown=root:root /tmp/bin/railpack-dir/README.md /usr/local/share/railpack/README.md
 
 # distroless:nonroot は uid=65532 で起動するためここで明示
 USER nonroot
