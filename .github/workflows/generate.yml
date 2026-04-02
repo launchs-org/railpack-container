@@ -29,7 +29,7 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           # ワークフロー以外のファイルを追加
-          git add railpack_releases.json
+          git add railpack_releases.json README.md
           # 差分がある場合のみコミットしてプッシュ
           git status
           git diff --staged --exit-code || (git commit -m "chore: update railpack version list" && git push)
