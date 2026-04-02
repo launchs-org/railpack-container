@@ -7,12 +7,11 @@ jobs:
   update-list:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # リポジトリへの書き込み権限を明示
 
     steps:
       - name: コードのチェックアウト
         uses: actions/checkout@v4
-        # token の指定を削除（デフォルトの GITHUB_TOKEN を使用）
 
       - name: Goのセットアップ
         uses: actions/setup-go@v5
@@ -29,6 +28,8 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          # workflows は含まず、json だけを追加
+          # ワークフロー以外のファイルを追加
           git add railpack_releases.json
+          # 差分がある場合のみコミットしてプッシュ
+          git status
           git diff --staged --exit-code || (git commit -m "chore: update railpack version list" && git push)

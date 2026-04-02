@@ -6,7 +6,7 @@ on:
       version:
         description: 'ビルドするバージョンを入力 (例: 0.23.0)'
         required: true
-        type: string # 手入力に変更
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -16,8 +16,8 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      packages: write
+      contents: write # リポジトリへの書き込み
+      packages: write # GHCRへの書き込み
 
     steps:
       - name: コードのチェックアウト
@@ -49,9 +49,11 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
       - name: 生成されたDockerfileをコミット
+        shell: bash
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add dockerfiles/Dockerfile.${{ github.event.inputs.version }} railpack_releases.json
-          git commit -m "chore: add Dockerfile for version ${{ github.event.inputs.version }}" || echo "変更なし"
-          git push
+          # dockerfiles ディレクトリと JSON を追加
+          git add dockerfiles/ railpack_releases.json
+          git status
+          git diff --staged --exit-code || (git commit -m "chore: add Dockerfile for version ${{ github.event.inputs.version }}" && git push)
