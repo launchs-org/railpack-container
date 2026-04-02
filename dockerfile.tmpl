@@ -1,0 +1,16 @@
+# Railpack version {{.Version}}
+FROM debian:stable-slim
+
+# 必要なツール（curl）のインストール
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# Railpackのインストール (指定されたバージョンを環境変数で渡す形式)
+RUN curl -sSL https://railpack.com/install.sh | RAILPACK_VERSION={{.Version}} sh -s -- --bin-dir /usr/local/bin
+
+# 実行パスの設定
+ENV PATH="/usr/local/bin:${PATH}"
+
+# 正常にインストールされたか確認
+RUN ["/usr/local/bin/railpack","--version"]
+
+ENTRYPOINT ["/usr/local/bin/railpack"]

@@ -1,0 +1,60 @@
+name: Build and Push Railpack Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'ビルドするバージョンを選択'
+        required: true
+        default: 'latest'
+        type: choice
+        options:
+          - 'latest' # ここはスクリプトによって自動的に書き換えられます
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: コードのチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Goのセットアップ
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Dockerfileの生成 (特定バージョンのみ)
+        run: go run fetch_and_generate.go -single-version ${{ github.event.inputs.version }}
+
+      - name: GHCRにログイン
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Dockerイメージのビルドとプッシュ
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./dockerfiles/Dockerfile.${{ github.event.inputs.version }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+      - name: 生成されたDockerfileをコミット
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add dockerfiles/Dockerfile.${{ github.event.inputs.version }} railpack_releases.json
+          git commit -m "chore: add Dockerfile for version ${{ github.event.inputs.version }}" || echo "変更なし"
+          git push

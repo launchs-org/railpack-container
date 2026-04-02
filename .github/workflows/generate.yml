@@ -1,0 +1,32 @@
+name: Update Railpack Version List
+
+on:
+  workflow_dispatch:
+
+jobs:
+  update-list:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: コードのチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Goのセットアップ
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: リストとビルド設定の更新
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: go run fetch_and_generate.go
+
+      - name: 変更をコミット
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add railpack_releases.json .github/workflows/build.yml
+          git commit -m "chore: update railpack versions and build options" || echo "変更なし"
+          git push
