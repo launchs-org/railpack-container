@@ -1,16 +1,44 @@
 # Railpack version {{.Version}}
-FROM debian:stable-slim
+# ============================================================
+# Stage 1: installer
+#   - curl でバイナリを取得する一時ステージ
+#   - このステージのツール類は最終イメージに含まれない
+# ============================================================
+FROM debian:stable-slim AS installer
 
-# 必要なツール（curl）のインストール
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# hadolint ignore=DL3008
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      curl \
+      ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 
-# Railpackのインストール (指定されたバージョンを環境変数で渡す形式)
-RUN curl -sSL https://railpack.com/install.sh | RAILPACK_VERSION={{.Version}} sh -s -- --bin-dir /usr/local/bin
+RUN curl -fsSL --proto '=https' --tlsv1.2 \
+      https://railpack.com/install.sh \
+    | RAILPACK_VERSION={{.Version}} sh -s -- --bin-dir /tmp/bin \
+ && chmod 0755 /tmp/bin/railpack
 
-# 実行パスの設定
-ENV PATH="/usr/local/bin:${PATH}"
+# スタティックバイナリであることを確認（動的リンクなら ldd は依存を表示する）
+RUN ! ldd /tmp/bin/railpack 2>&1 | grep -q "=>" \
+    || { echo "ERROR: railpack is not a static binary"; exit 1; }
 
-# 正常にインストールされたか確認
-RUN ["/usr/local/bin/railpack","--version"]
+# ============================================================
+# Stage 2: runtime
+#   - シェルもパッケージマネージャも持たない最小イメージ
+#   - gcr.io/distroless/static-debian12:nonroot
+#     * サイズ: ~2 MiB (debian:stable-slim の ~30 MiB と比較)
+#     * 含むもの: ca-certificates / tzdata / /etc/passwd (/etc/group)
+#     * 非 root ユーザー (uid=65532) がデフォルト
+#     * シェル・パッケージマネージャなし → 攻撃対象面が極小
+# ============================================================
+FROM gcr.io/distroless/static-debian12:nonroot
+
+# バイナリをコピー（root 所有・755）
+COPY --from=installer --chown=root:root /tmp/bin/railpack /usr/local/bin/railpack
+
+# distroless:nonroot は uid=65532 で起動するためここで明示
+USER nonroot
+
+WORKDIR /workspace
 
 ENTRYPOINT ["/usr/local/bin/railpack"]
