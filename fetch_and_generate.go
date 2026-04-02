@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
-	"regexp"
 	"strings"
 	"text/template"
 )
@@ -23,12 +23,11 @@ type TemplateData struct {
 }
 
 const (
-	owner        = "railwayapp"
-	repo         = "railpack"
-	cacheFile    = "railpack_releases.json"
-	dockerDir    = "dockerfiles"
-	tmplFile     = "dockerfile.tmpl"
-	buildYmlFile = ".github/workflows/build.yml"
+	owner      = "railwayapp"
+	repo       = "railpack"
+	cacheFile  = "railpack_releases.json"
+	dockerDir  = "dockerfiles"
+	tmplFile   = "dockerfile.tmpl"
 )
 
 func main() {
@@ -99,8 +98,8 @@ func generateOne(version string, tmpl *template.Template) {
 	}
 }
 
-func generateOne(version string, tmpl *template.Template) {
-
+// GitHub APIからリリース一覧を取得
+func fetchAllReleases() []Release {
 	var releases []Release
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases?per_page=100", owner, repo)
 
@@ -119,8 +118,17 @@ func generateOne(version string, tmpl *template.Template) {
 		}
 		defer resp.Body.Close()
 
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			fmt.Printf("APIエラー: ステータス %d. ボディ: %s\n", resp.StatusCode, string(body))
+			break
+		}
+
 		var pageReleases []Release
-		json.NewDecoder(resp.Body).Decode(&pageReleases)
+		if err := json.NewDecoder(resp.Body).Decode(&pageReleases); err != nil {
+			fmt.Printf("デコードエラー: %v\n", err)
+			break
+		}
 		releases = append(releases, pageReleases...)
 		url = getNextLink(resp.Header.Get("Link"))
 	}
